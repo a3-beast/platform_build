@@ -158,6 +158,11 @@ PRODUCT_COPY_FILES += \
 PRODUCT_COPY_FILES += \
     system/core/rootdir/etc/public.libraries.android.txt:system/etc/public.libraries.txt
 
+ifeq ($(TRUSTONIC_TEE_SUPPORT),yes)
+PRODUCT_COPY_FILES += \
+    vendor/mediatek/proprietary/trustzone/trustonic/source/external/rootdir/public.libraries-trustonic.txt:system/etc/public.libraries-trustonic.txt
+endif
+
 # Enable boot.oat filtering of compiled classes to reduce boot.oat size. b/28026683
 PRODUCT_COPY_FILES += $(call add-to-product-copy-files-if-exists,\
     frameworks/base/config/compiled-classes-phone:system/etc/compiled-classes)

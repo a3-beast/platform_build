@@ -176,6 +176,7 @@ $(INSTALLED_DEFAULT_PROP_TARGET): $(intermediate_system_build_prop)
 	$(hide) echo ro.bootimage.build.date=`$(DATE_FROM_FILE)`>>$@
 	$(hide) echo ro.bootimage.build.date.utc=`$(DATE_FROM_FILE) +%s`>>$@
 	$(hide) echo ro.bootimage.build.fingerprint="$(BUILD_FINGERPRINT_FROM_FILE)">>$@
+	$(hide) echo ro.build.fingerprint="$(BUILD_FINGERPRINT_FROM_FILE)">>$@
 	$(hide) build/make/tools/post_process_props.py $@
 ifdef property_overrides_split_enabled
 	$(hide) mkdir -p $(TARGET_ROOT_OUT)
@@ -696,6 +697,8 @@ ramdisk-nodeps: $(MKBOOTFS) | $(MINIGZIP)
 	$(hide) $(MKBOOTFS) -d $(TARGET_OUT) $(TARGET_ROOT_OUT) | $(MINIGZIP) > $(INSTALLED_RAMDISK_TARGET)
 
 INSTALLED_BOOTIMAGE_TARGET := $(PRODUCT_OUT)/boot.img
+MTK_BOOTIMAGE_TARGET := $(PRODUCT_OUT)/boot.img
+INSTALLED_BOOTIMAGE_TARGET := $(call intermediates-dir-for,PACKAGING,boot)/boot.img
 
 ifneq ($(strip $(TARGET_NO_KERNEL)),true)
 
@@ -1242,7 +1245,11 @@ ifneq (,$(PRODUCT_AAPT_PREF_CONFIG))
 recovery_density := $(filter %dpi,$(PRODUCT_AAPT_PREF_CONFIG))
 else
 # Otherwise, use the default medium density.
-recovery_densities := mdpi
+recovery_density := mdpi
+endif
+
+ifeq ($(MTK_RECOVERY_MEDIUM_RES),yes)
+recovery_density := mdpi
 endif
 
 ifneq (,$(wildcard $(recovery_resources_common)-$(recovery_density)))
@@ -2085,8 +2092,10 @@ endif
 # -----------------------------------------------------------------
 # dtbo image
 ifdef BOARD_PREBUILT_DTBOIMAGE
-INSTALLED_DTBOIMAGE_TARGET := $(PRODUCT_OUT)/dtbo.img
-
+INSTALLED_DTBOIMAGE_TARGET := $(PRODUCT_OUT)/$(notdir $(BOARD_PREBUILT_DTBOIMAGE))
+ifdef BOARD_ODMDTBOIMG_PARTITION_SIZE
+BOARD_DTBOIMG_PARTITION_SIZE := $(BOARD_ODMDTBOIMG_PARTITION_SIZE)
+endif
 ifeq ($(BOARD_AVB_ENABLE),true)
 $(INSTALLED_DTBOIMAGE_TARGET): $(BOARD_PREBUILT_DTBOIMAGE) $(AVBTOOL) $(BOARD_AVB_DTBO_KEY_PATH)
 	cp $(BOARD_PREBUILT_DTBOIMAGE) $@
@@ -2288,6 +2297,22 @@ $(INSTALLED_VBMETAIMAGE_TARGET): $(AVBTOOL)
 	  --flag 2 --padding_size 4096 --output $@
 
 endif # BOARD_AVB_ENABLE
+
+
+ifeq (yes, $(strip $(MAIN_VBMETA_IN_BOOT)))
+
+ifeq (true, $(strip $(BOARD_AVB_ENABLE)))
+$(MTK_BOOTIMAGE_TARGET): $(INSTALLED_BOOTIMAGE_TARGET) $(INSTALLED_VBMETAIMAGE_TARGET) $(AVBTOOL)
+	@echo "Install boot image: $@"
+	$(copy-file-to-target)
+	$(hide) $(AVBTOOL) append_vbmeta_image --image $@ --partition_size $(BOARD_BOOTIMAGE_PARTITION_SIZE) --vbmeta_image $(INSTALLED_VBMETAIMAGE_TARGET)
+endif
+
+else
+$(MTK_BOOTIMAGE_TARGET): $(INSTALLED_BOOTIMAGE_TARGET)
+	@echo "Install boot image: $@"
+	$(copy-file-to-target)
+endif
 
 # -----------------------------------------------------------------
 # bring in the installer image generation defines if necessary
@@ -2528,6 +2553,7 @@ endef
 # directories are up-to-date.
 $(BUILT_TARGET_FILES_PACKAGE): \
 		$(INSTALLED_BOOTIMAGE_TARGET) \
+		$(MTK_BOOTIMAGE_TARGET) \
 		$(INSTALLED_RADIOIMAGE_TARGET) \
 		$(INSTALLED_RECOVERYIMAGE_TARGET) \
 		$(FULL_SYSTEMIMAGE_DEPS) \
@@ -2725,6 +2751,9 @@ ifdef BOARD_AVB_RECOVERY_KEY_PATH
 	$(hide) echo "avb_recovery_algorithm=$(BOARD_AVB_RECOVERY_ALGORITHM)" >> $(zip_root)/META/misc_info.txt
 	$(hide) echo "avb_recovery_rollback_index_location=$(BOARD_AVB_RECOVERY_ROLLBACK_INDEX_LOCATION)" >> $(zip_root)/META/misc_info.txt
 endif # BOARD_AVB_RECOVERY_KEY_PATH
+ifeq (yes, $(strip $(MAIN_VBMETA_IN_BOOT)))
+	$(hide) echo "avb_main_vbmeta_in_boot=true" >> $(zip_root)/META/misc_info.txt
+endif # MAIN_VBMETA_IN_BOOT
 endif # BOARD_AVB_ENABLE
 ifdef BOARD_BPT_INPUT_FILES
 	$(hide) echo "board_bpt_enable=true" >> $(zip_root)/META/misc_info.txt
@@ -2735,6 +2764,10 @@ ifdef BOARD_BPT_DISK_SIZE
 	$(hide) echo "board_bpt_disk_size=$(BOARD_BPT_DISK_SIZE)" >> $(zip_root)/META/misc_info.txt
 endif
 	$(call generate-userimage-prop-dictionary, $(zip_root)/META/misc_info.txt)
+	@# sign image used to get boot and recovery sig files
+	$(hide) $(SHELL) $(SECURITY_SIG_TOOL)
+	@# Copy raw images which need OTA updates from out folder to zip_root/IMAGES folder
+	$(hide) BOARD_AVB_ENABLE="$(BOARD_AVB_ENABLE)" AB_OTA_UPDATER="$(AB_OTA_UPDATER)" AB_OTA_PARTITIONS="$(AB_OTA_PARTITIONS)" $(TARGET_RELEASETOOLS_EXTENSIONS)/mt_ota_preprocess.py $(zip_root) $(PRODUCT_OUT) $(PRODUCT_OUT)/ota_update_list.txt
 ifneq ($(INSTALLED_RECOVERYIMAGE_TARGET),)
 	$(hide) PATH=$(foreach p,$(INTERNAL_USERIMAGES_BINARY_PATHS),$(p):)$$PATH MKBOOTIMG=$(MKBOOTIMG) \
 	    build/make/tools/releasetools/make_recovery_patch $(zip_root) $(zip_root)
@@ -2794,7 +2827,7 @@ ifdef BOARD_PREBUILT_BOOTIMAGE
 endif
 ifdef BOARD_PREBUILT_DTBOIMAGE
 	$(hide) mkdir -p $(zip_root)/PREBUILT_IMAGES
-	$(hide) cp $(INSTALLED_DTBOIMAGE_TARGET) $(zip_root)/PREBUILT_IMAGES/
+	$(hide) cp $(patsubst %.img, %-verified.img, $(INSTALLED_DTBOIMAGE_TARGET)) $(zip_root)/PREBUILT_IMAGES/dtbo.img
 	$(hide) echo "has_dtbo=true" >> $(zip_root)/META/misc_info.txt
 ifeq ($(BOARD_AVB_ENABLE),true)
 	$(hide) echo "dtbo_size=$(BOARD_DTBOIMG_PARTITION_SIZE)" >> $(zip_root)/META/misc_info.txt
@@ -2849,11 +2882,24 @@ endif
 
 	$(hide) PATH=$(foreach p,$(INTERNAL_USERIMAGES_BINARY_PATHS),$(p):)$$PATH MKBOOTIMG=$(MKBOOTIMG) \
 	    build/make/tools/releasetools/add_img_to_target_files -a -v -p $(HOST_OUT) $(zip_root)
+ifeq ($(notdir $(BOARD_PREBUILT_DTBOIMAGE)), odmdtbo.img)
+	mv $(zip_root)/IMAGES/dtbo.img $(zip_root)/IMAGES/odmdtbo.img
+endif
+ifeq (yes, $(strip $(MAIN_VBMETA_IN_BOOT)))
+ifeq (true, $(strip $(BOARD_AVB_ENABLE)))
+	$(hide) $(AVBTOOL) append_vbmeta_image --image $(zip_root)/IMAGES/boot.img --partition_size $(BOARD_BOOTIMAGE_PARTITION_SIZE) --vbmeta_image $(zip_root)/IMAGES/vbmeta.img
+endif
+endif
 	@# Zip everything up, preserving symlinks and placing META/ files first to
 	@# help early validation of the .zip file while uploading it.
 	$(hide) find $(zip_root)/META | sort >$@.list
 	$(hide) find $(zip_root) -path $(zip_root)/META -prune -o -print | sort >>$@.list
 	$(hide) $(SOONG_ZIP) -d -o $@ -C $(zip_root) -l $@.list
+	$(hide) $(TARGET_RELEASETOOLS_EXTENSIONS)/replace_img_from_target_files.py $@ $(PRODUCT_OUT)
+	@# If SECURITY_IMAGE_PATH doesn't exist , security version is 1.1 and images need to sign again
+ifeq ("$(wildcard $(SECURITY_IMAGE_PATH))","")
+	$(hide) $(SHELL) $(SECURITY_SIG_TOOL)
+endif
 
 .PHONY: target-files-package
 target-files-package: $(BUILT_TARGET_FILES_PACKAGE)

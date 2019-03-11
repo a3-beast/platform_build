@@ -25,9 +25,8 @@ PRODUCT_PACKAGES := \
     Music \
     MusicFX \
     NfcNci \
-    OneTimeInitializer \
     Provision \
-    SystemUI \
+    MtkSystemUI \
     SysuiDarkThemeOverlay \
     DisplayCutoutEmulationDoubleOverlay \
     DisplayCutoutEmulationCornerOverlay \
@@ -61,6 +60,12 @@ PRODUCT_COPY_FILES := \
 PRODUCT_PROPERTY_OVERRIDES += \
     ro.carrier=unknown
 
+ifneq ($(strip $(MTK_GMO_RAM_OPTIMIZE)), yes)
+
+PRODUCT_PACKAGES += \
+    OneTimeInitializer
+
+endif
 $(call inherit-product-if-exists, frameworks/base/data/fonts/fonts.mk)
 $(call inherit-product-if-exists, external/google-fonts/dancing-script/fonts.mk)
 $(call inherit-product-if-exists, external/google-fonts/carrois-gothic-sc/fonts.mk)

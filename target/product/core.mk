@@ -31,10 +31,9 @@ PRODUCT_PACKAGES += \
     CaptivePortalLogin \
     CertInstaller \
     Contacts \
-    DeskClock \
-    DocumentsUI \
+    MtkDeskClock \
+    MtkDocumentsUI \
     DownloadProviderUi \
-    Email \
     ExactCalculator \
     ExternalStorageProvider \
     FusedLocation \

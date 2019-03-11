@@ -73,7 +73,8 @@ BUILD_QEMU_IMAGES := true
 USE_OPENGL_RENDERER := true
 
 TARGET_USERIMAGES_USE_EXT4 := true
-BOARD_SYSTEMIMAGE_PARTITION_SIZE := 2684354560 # 2.5 GB
+# Partition size is default 1.5GB (1536MB) for 64 bits projects
+BOARD_SYSTEMIMAGE_PARTITION_SIZE := 1610612736
 BOARD_USERDATAIMAGE_PARTITION_SIZE := 576716800
 TARGET_COPY_OUT_VENDOR := vendor
 # ~100 MB vendor image. Please adjust system image / vendor image sizes
@@ -93,7 +94,7 @@ BOARD_CACHEIMAGE_FILE_SYSTEM_TYPE := ext4
 BOARD_CACHEIMAGE_PARTITION_SIZE := 16777216
 
 BOARD_PROPERTY_OVERRIDES_SPLIT_ENABLED := true
-BOARD_SEPOLICY_DIRS += device/generic/goldfish/sepolicy/common
+BOARD_SEPOLICY_DIRS += build/target/board/generic/sepolicy
 
 # Android Verified Boot (AVB):
 #   Builds a special vbmeta.img that disables AVB verification.
